@@ -28,6 +28,9 @@ jobs:
       - name: Run tests
         run: python -m pytest
 
+      - name: Check version sync
+        run: python scripts/sync_version.py --check
+
       - name: Build package
         run: python -m build
 
