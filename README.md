@@ -30,6 +30,11 @@ print(result.text)
 print(result.metadata)
 ```
 
+`metadata` always includes extracted text size fields and lightweight OLE
+inventory fields. When present in the document's saved Word metadata, it can
+also include values such as title, author, company, page count, word count,
+character count, creation time, and last-saved time.
+
 ## API
 
 ```python
@@ -44,9 +49,28 @@ extract_text(document_bytes: bytes, *, options: ExtractionOptions | None = None)
 - `metadata`: lightweight extraction metadata
 - `warnings`: non-fatal parser warnings
 
+Example metadata:
+
+```python
+{
+    "chars": 1200,
+    "bytes": 1225,
+    "title": "Quarterly Notes",
+    "author": "Liam Corrigan",
+    "page_count": 4,
+    "word_count": 210,
+    "has_macros": False,
+    "has_embedded_objects": False,
+}
+```
+
 ## Limitations
 
 This is not a full Microsoft Word renderer. It aims to recover readable text safely from common legacy `.doc` files. Formatting fidelity, OCR, images, macros, tracked changes, and embedded object extraction are out of scope.
+
+`page_count` is read from saved Word document metadata when available. It is
+not recalculated by rendering the document, so it can be stale if the file was
+saved without updating document statistics.
 
 ## Development
 
