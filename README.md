@@ -1,5 +1,7 @@
 # legacy-doc
 
+[![Downloads](https://static.pepy.tech/badge/legacy-doc)](https://pepy.tech/project/legacy-doc)
+
 `legacy-doc` is a small, dependency-free Python library for extracting readable text from classic Microsoft Word `.doc` files.
 
 It is intentionally narrow:
