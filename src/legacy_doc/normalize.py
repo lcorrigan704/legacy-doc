@@ -2,6 +2,8 @@ from __future__ import annotations
 
 import re
 
+_PAGE_FIELD_PATTERN = r"(?:PAGE|NUMPAGES)\s+\\\*\s+MERGEFORMAT"
+
 
 def normalize_word_text(text: str) -> str:
     replacements = {
@@ -28,22 +30,22 @@ def normalize_word_text(text: str) -> str:
     lines = []
     for line in text.splitlines():
         line = re.sub(r"[ \t]+", " ", line).strip()
-        if line and _is_page_field_line(line):
+        if line and not _is_page_field_line(line):
             lines.append(line)
     return "\n".join(lines).strip()
 
 
 def _is_page_field_line(line: str) -> bool:
-    return bool(re.fullmatch(_PAGE_FIELD_PATTERN,line,flags=re.IGNORECASE))
+    return bool(re.fullmatch(_PAGE_FIELD_PATTERN, line, flags=re.IGNORECASE))
 
-_PAGE_FIELD_PATTERN = r"(?:PAGE|NUMBPAGES)\s+\\\*\s+MERGEFORMAT(?:\s+\s+)?"
 
 def _remove_page_field_artifacts(text: str) -> str:
     return re.sub(
         rf"(?im)(?:^|[ \t]+){_PAGE_FIELD_PATTERN}(?=$|[ \t]*\n)",
         "\n",
-        text
+        text,
     )
+
 
 def _is_private_use(char: str) -> bool:
     codepoint = ord(char)

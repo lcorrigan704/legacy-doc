@@ -4,7 +4,7 @@ from dataclasses import dataclass, field
 from typing import Mapping
 
 PARSER_NAME = "legacy-doc"
-PARSER_VERSION = "0.1.0"
+PARSER_VERSION = "0.1.1"
 
 
 @dataclass(frozen=True)
