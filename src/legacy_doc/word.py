@@ -1,17 +1,37 @@
 from __future__ import annotations
 
 import struct
+from dataclasses import dataclass
 
 from legacy_doc.exceptions import LegacyDocError
 from legacy_doc.normalize import normalize_word_text
 from legacy_doc.ole import OleReader
+from legacy_doc.properties import (
+    DOCUMENT_SUMMARY_INFORMATION_STREAM,
+    SUMMARY_INFORMATION_STREAM,
+    parse_document_summary_information,
+    parse_summary_information,
+)
 from legacy_doc.types import ExtractionOptions
 
 
-def extract_word_text(document_bytes: bytes, *, options: ExtractionOptions) -> str:
+@dataclass(frozen=True)
+class WordExtraction:
+    text: str
+    metadata: dict[str, object]
+    warnings: tuple[str, ...] = ()
+
+
+def extract_word_document(
+    document_bytes: bytes,
+    *,
+    options: ExtractionOptions,
+) -> WordExtraction:
     ole = OleReader(document_bytes, options=options)
     if ole.has_stream("EncryptedPackage"):
         raise LegacyDocError("Encrypted legacy .doc files are not supported")
+
+    metadata, warnings = _extract_metadata(ole)
 
     word_document = ole.read_stream("WordDocument")
     if len(word_document) < 0x44:
@@ -34,7 +54,54 @@ def extract_word_text(document_bytes: bytes, *, options: ExtractionOptions) -> s
     text = normalize_word_text(text)
     if not text:
         raise LegacyDocError(".doc extraction produced no text")
-    return text
+    return WordExtraction(text=text, metadata=metadata, warnings=tuple(warnings))
+
+
+def extract_word_text(document_bytes: bytes, *, options: ExtractionOptions) -> str:
+    return extract_word_document(document_bytes, options=options).text
+
+
+def _extract_metadata(ole: OleReader) -> tuple[dict[str, object], list[str]]:
+    stream_names = ole.list_streams()
+    folded_stream_names = {name.casefold() for name in stream_names}
+    metadata: dict[str, object] = {
+        "has_summary_information": ole.has_stream(SUMMARY_INFORMATION_STREAM),
+        "has_document_summary_information": ole.has_stream(
+            DOCUMENT_SUMMARY_INFORMATION_STREAM
+        ),
+        "has_macros": _has_macros(folded_stream_names),
+        "has_embedded_objects": _has_embedded_objects(folded_stream_names),
+        "ole_stream_count": len(stream_names),
+    }
+    warnings: list[str] = []
+
+    summary_stream = ole.try_read_stream(SUMMARY_INFORMATION_STREAM)
+    if summary_stream is not None:
+        try:
+            metadata.update(parse_summary_information(summary_stream))
+        except LegacyDocError:
+            warnings.append("SummaryInformation stream could not be parsed")
+
+    document_summary_stream = ole.try_read_stream(DOCUMENT_SUMMARY_INFORMATION_STREAM)
+    if document_summary_stream is not None:
+        try:
+            metadata.update(parse_document_summary_information(document_summary_stream))
+        except LegacyDocError:
+            warnings.append("DocumentSummaryInformation stream could not be parsed")
+
+    return metadata, warnings
+
+
+def _has_macros(stream_names: set[str]) -> bool:
+    macro_markers = {"vba", "_vba_project", "_vba_project_cur", "dir", "project"}
+    return bool(stream_names & macro_markers)
+
+
+def _has_embedded_objects(stream_names: set[str]) -> bool:
+    return any(
+        name == "objectpool" or name.startswith("ole") or name.startswith("package")
+        for name in stream_names
+    )
 
 
 def _find_clx(table_stream: bytes) -> bytes:

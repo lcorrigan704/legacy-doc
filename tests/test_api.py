@@ -15,7 +15,9 @@ def test_extracts_utf16_piece_table_text() -> None:
 
     assert result.text == "Hello\nlegacy doc"
     assert result.parser == "legacy-doc"
-    assert result.metadata == {"chars": 16, "bytes": 16}
+    assert result.metadata["chars"] == 16
+    assert result.metadata["bytes"] == 16
+    assert result.metadata["ole_stream_count"] == 2
 
 
 def test_extracts_compressed_cp1252_piece_table_text() -> None:

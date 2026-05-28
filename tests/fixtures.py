@@ -1,12 +1,20 @@
 from __future__ import annotations
 
 import struct
+from datetime import datetime, timezone
 from math import ceil
+from typing import Any
 
 END_OF_CHAIN = 0xFFFFFFFE
 FREE_SECTOR = 0xFFFFFFFF
 FAT_SECTOR = 0xFFFFFFFD
 SECTOR_SIZE = 512
+SUMMARY_INFORMATION_STREAM = "\x05SummaryInformation"
+DOCUMENT_SUMMARY_INFORMATION_STREAM = "\x05DocumentSummaryInformation"
+VT_I2 = 0x0002
+VT_I4 = 0x0003
+VT_LPSTR = 0x001E
+VT_FILETIME = 0x0040
 
 
 def make_doc_bytes(
@@ -16,6 +24,8 @@ def make_doc_bytes(
     encrypted: bool = False,
     use_1table: bool = False,
     include_piece_table: bool = True,
+    summary_properties: dict[int, Any] | None = None,
+    document_summary_properties: dict[int, Any] | None = None,
     extra_streams: dict[str, bytes] | None = None,
 ) -> bytes:
     """Build a tiny Word 97-2003-like OLE file for parser regression tests."""
@@ -52,7 +62,41 @@ def make_doc_bytes(
         table_name: table_stream,
         **(extra_streams or {}),
     }
+    if summary_properties is not None:
+        streams[SUMMARY_INFORMATION_STREAM] = make_property_stream(summary_properties)
+    if document_summary_properties is not None:
+        streams[DOCUMENT_SUMMARY_INFORMATION_STREAM] = make_property_stream(
+            document_summary_properties
+        )
     return make_ole_file(streams)
+
+
+def make_property_stream(properties: dict[int, Any]) -> bytes:
+    properties = {1: 1252, **properties}
+    values = bytearray()
+    entries: list[tuple[int, int]] = []
+    value_start = 8 + len(properties) * 8
+
+    for property_id, value in properties.items():
+        entries.append((property_id, value_start + len(values)))
+        values.extend(_property_value(value))
+        while len(values) % 4:
+            values.append(0)
+
+    section_size = value_start + len(values)
+    section = bytearray()
+    section.extend(struct.pack("<II", section_size, len(properties)))
+    for property_id, offset in entries:
+        section.extend(struct.pack("<II", property_id, offset))
+    section.extend(values)
+
+    header = bytearray()
+    header.extend(struct.pack("<HHI", 0xFFFE, 0, 0))
+    header.extend(b"\x00" * 16)
+    header.extend(struct.pack("<I", 1))
+    header.extend(b"\x00" * 16)
+    header.extend(struct.pack("<I", 48))
+    return bytes(header) + bytes(section)
 
 
 def make_ole_file(streams: dict[str, bytes]) -> bytes:
@@ -79,7 +123,27 @@ def make_ole_file(streams: dict[str, bytes]) -> bytes:
     directory.extend(_directory_entry("Root Entry", 5, END_OF_CHAIN, 0))
     for name, (start_sector, size) in stream_locations.items():
         directory.extend(_directory_entry(name, 2, start_sector, size))
-    sector_payloads[0] = bytes(directory).ljust(SECTOR_SIZE, b"\x00")[:SECTOR_SIZE]
+    directory_payload = bytes(directory)
+    directory_sector_count = max(1, ceil(len(directory_payload) / SECTOR_SIZE))
+    directory_payload = directory_payload.ljust(
+        directory_sector_count * SECTOR_SIZE,
+        b"\x00",
+    )
+    sector_payloads[0] = directory_payload[:SECTOR_SIZE]
+    if directory_sector_count > 1:
+        first_extra_directory_sector = len(sector_payloads)
+        fat_entries[0] = first_extra_directory_sector
+        for index in range(1, directory_sector_count):
+            sector_payloads.append(
+                directory_payload[index * SECTOR_SIZE : (index + 1) * SECTOR_SIZE]
+            )
+            current_sector = first_extra_directory_sector + index - 1
+            next_sector = (
+                END_OF_CHAIN
+                if index == directory_sector_count - 1
+                else current_sector + 1
+            )
+            fat_entries.append(next_sector)
     sector_payloads[1] = struct.pack(
         "<128I",
         *fat_entries[:128],
@@ -111,6 +175,21 @@ def corrupt_fat_entry(document: bytes, sector: int, value: int) -> bytes:
     fat_offset = SECTOR_SIZE + SECTOR_SIZE + sector * 4
     struct.pack_into("<I", data, fat_offset, value)
     return bytes(data)
+
+
+def _property_value(value: Any) -> bytes:
+    if isinstance(value, datetime):
+        epoch = datetime(1601, 1, 1, tzinfo=timezone.utc)
+        filetime = int((value.astimezone(timezone.utc) - epoch).total_seconds() * 10**7)
+        return struct.pack("<HHQ", VT_FILETIME, 0, filetime)
+    if isinstance(value, str):
+        raw = value.encode("cp1252") + b"\x00"
+        return struct.pack("<HHI", VT_LPSTR, 0, len(raw)) + raw
+    if isinstance(value, int):
+        if -32768 <= value <= 32767:
+            return struct.pack("<HHh", VT_I2, 0, value)
+        return struct.pack("<HHi", VT_I4, 0, value)
+    raise TypeError(f"Unsupported property fixture value: {value!r}")
 
 
 def _directory_entry(name: str, object_type: int, start_sector: int, size: int) -> bytes:

@@ -74,6 +74,14 @@ class OleReader:
         wanted = name.casefold()
         return any(entry.name.casefold() == wanted for entry in self.directory)
 
+    def try_read_stream(self, name: str, max_size: int | None = None) -> bytes | None:
+        if not self.has_stream(name):
+            return None
+        return self.read_stream(name, max_size=max_size)
+
+    def list_streams(self) -> tuple[str, ...]:
+        return tuple(entry.name for entry in self.directory if entry.object_type == 2)
+
     def _read_difat_chain(self, first_sector: int, count: int) -> list[int]:
         if count == 0 or first_sector in {FREE_SECTOR, END_OF_CHAIN}:
             return []
