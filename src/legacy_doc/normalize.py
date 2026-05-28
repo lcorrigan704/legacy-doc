@@ -2,7 +2,8 @@ from __future__ import annotations
 
 import re
 
-_PAGE_FIELD_PATTERN = r"(?:PAGE|NUMPAGES)\s+\\\*\s+MERGEFORMAT"
+_PAGE_FIELD_PATTERN = r"(?:PAGE|NUMPAGES)\s+\\\*\s+MERGEFORMAT\s*\d*"
+_PAGE_FIELD_REMAINDER_PATTERN = r"(?i)^[\s\d/\\|:;.,()\[\]{}_-]*(?:of[\s\d/\\|:;.,()\[\]{}_-]*)*$"
 
 
 def normalize_word_text(text: str) -> str:
@@ -36,7 +37,10 @@ def normalize_word_text(text: str) -> str:
 
 
 def _is_page_field_line(line: str) -> bool:
-    return bool(re.fullmatch(_PAGE_FIELD_PATTERN, line, flags=re.IGNORECASE))
+    if not re.search(_PAGE_FIELD_PATTERN, line, flags=re.IGNORECASE):
+        return False
+    remainder = re.sub(_PAGE_FIELD_PATTERN, "", line, flags=re.IGNORECASE)
+    return bool(re.fullmatch(_PAGE_FIELD_REMAINDER_PATTERN, remainder))
 
 
 def _remove_page_field_artifacts(text: str) -> str:
