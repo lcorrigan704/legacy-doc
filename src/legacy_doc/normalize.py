@@ -17,6 +17,8 @@ def normalize_word_text(text: str) -> str:
     for source, target in replacements.items():
         text = text.replace(source, target)
 
+    text = _remove_page_field_artifacts(text)
+
     text = "".join(
         char
         for char in text
@@ -26,10 +28,22 @@ def normalize_word_text(text: str) -> str:
     lines = []
     for line in text.splitlines():
         line = re.sub(r"[ \t]+", " ", line).strip()
-        if line:
+        if line and _is_page_field_line(line):
             lines.append(line)
     return "\n".join(lines).strip()
 
+
+def _is_page_field_line(line: str) -> bool:
+    return bool(re.fullmatch(_PAGE_FIELD_PATTERN,line,flags=re.IGNORECASE))
+
+_PAGE_FIELD_PATTERN = r"(?:PAGE|NUMBPAGES)\s+\\\*\s+MERGEFORMAT(?:\s+\s+)?"
+
+def _remove_page_field_artifacts(text: str) -> str:
+    return re.sub(
+        rf"(?im)(?:^|[ \t]+){_PAGE_FIELD_PATTERN}(?=$|[ \t]*\n)",
+        "\n",
+        text
+    )
 
 def _is_private_use(char: str) -> bool:
     codepoint = ord(char)
