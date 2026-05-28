@@ -4,7 +4,7 @@ build-backend = "hatchling.build"
 
 [project]
 name = "legacy-doc"
-version = "0.2.0"
+version = "0.2.1"
 description = "Pure-Python text extraction for classic Microsoft Word .doc files."
 readme = "README.md"
 requires-python = ">=3.11"
